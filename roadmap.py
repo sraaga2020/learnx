@@ -2,50 +2,18 @@ import streamlit as st
 import json
 import re
 import os
+import urllib.parse  # Built-in utility to safely format search URLs
 from dotenv import load_dotenv
 from client import gem3
 import streamlit.components.v1 as components
-from serpapi import GoogleSearch
 
 load_dotenv()
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 
-# --- SerpAPI Search Function with Caching ---
-@st.cache_data(show_spinner=False)
-def serpapi_search(query, num_results=3):
-    """Perform Google search via SerpAPI and return a list of links."""
-    params = {
-        "engine": "google",
-        "q": query,
-        "api_key": SERPAPI_KEY,
-        "num": num_results
-    }
-    search = GoogleSearch(params)
-    results = search.get_dict()
-    links = []
-    for item in results.get("organic_results", []):
-        link = item.get("link")
-        if link:
-            links.append(link)
-        if len(links) >= num_results:
-            break
-    return links
-
-# --- Fetch real links for a mini-topic ---
-def fetch_resource_links(skill, week_num, mini_title):
-    articles = serpapi_search(
-        f"{skill} educational article for high school students Week {week_num} - {mini_title}",
-        num_results=3
-    )
-    courses = serpapi_search(
-        f"{skill} reputable online course Coursera edX Stanford community college high school Week {week_num} - {mini_title}",
-        num_results=3
-    )
-    videos = serpapi_search(
-        f"{skill} tutorial video for high school students Week {week_num} - {mini_title} site:youtube.com",
-        num_results=3
-    )
-    return {"articles": articles, "courses": courses, "videos": videos}
+# --- Helper Function to Create Safe, Direct Google Search Routing Links ---
+def make_search_link(query_string: str) -> str:
+    """Encodes a string into a clean, official Google search query string."""
+    encoded_query = urllib.parse.quote_plus(query_string)
+    return f"https://www.google.com/search?q={encoded_query}"
 
 # --- Roadmap Generator ---
 def roadmap_generator(skill):
@@ -143,7 +111,8 @@ Example format:
     if st.session_state.roadmap is None:
         prompt = f"""
 Return STRICT JSON only. Write a 4-week roadmap for "{skill}".
-Each week must have 3 mini-topics, each with 3 resources (video, article, course).
+Each week must have 3 mini-topics. Inside each mini-topic, provide exactly 1 video, 1 article, and 1 course.
+For each item, provide a clear 'title', a concrete 'search_query' (e.g., 'Coursera Introduction to {skill} tutorial'), and a 'description' containing exactly 1 clear sentence summarizing what the resource teaches.
 Format:
 {{
   "Week 1": {{
@@ -155,7 +124,17 @@ Format:
       "deliverable": "...",
       "difficulty": "easy/medium/hard"
     }},
-    "mini_topics":[{{"title":"...","description":"...","resources":{{"video":[],"article":[],"course":[]}}}}...]
+    "mini_topics":[
+      {{
+        "title":"...",
+        "description":"...",
+        "resources": {{
+          "video": {{"title": "Specific Video Title", "search_query": "YouTube specific video tutorial query", "description": "One sentence description."}},
+          "article": {{"title": "Specific Article Title", "search_query": "Medium dev to technical article query", "description": "One sentence description."}},
+          "course": {{"title": "Specific Course Platform Title", "search_query": "Coursera edX official course query", "description": "One sentence description."}}
+        }}
+      }}
+    ]
   }},
   "Week 2": {{ ... }},
   "Week 3": {{ ... }},
@@ -218,19 +197,22 @@ Format:
                 with st.expander(f"▶ {mini_title}"):
                     st.markdown(safe_get(mini, "description", "No description"))
 
-                    # Fetch resources with caching
-                    resources = fetch_resource_links(skill, week_num, mini_title)
-                    mini["resources"] = {
-                        "video": resources.get("videos", []),
-                        "article": resources.get("articles", []),
-                        "course": resources.get("courses", [])
-                    }
-
-                    # Display resources with actual link text
-                    for res_type, res_list in mini["resources"].items():
-                        st.markdown(f"**{res_type.capitalize()}s:**")
-                        for link in res_list:
-                            st.markdown(f"- [{link}]({link})")
+                    # Display formatted resources with inline hyperlinked titles and descriptions
+                    st.markdown("**Recommended Core Resources:**")
+                    resources_dict = mini.get("resources", {})
+                    
+                    for res_type in ["video", "article", "course"]:
+                        res_item = resources_dict.get(res_type, {})
+                        if isinstance(res_item, dict) and "title" in res_item:
+                            title_text = res_item.get("title", f"Suggested {res_type.capitalize()}")
+                            query_text = res_item.get("search_query", title_text)
+                            description_text = res_item.get("description", "Learn core foundational frameworks here.")
+                            
+                            # Construct an unbeatable search destination link
+                            live_url = make_search_link(query_text)
+                            
+                            # Renders as: - [Course Title](Link) — One sentence description.
+                            st.markdown(f"- **{res_type.capitalize()}:** [{title_text}]({live_url}) — *{description_text}*")
 
                     # Completion checkbox
                     done_key = f"{mini_key}_done"
