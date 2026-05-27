@@ -1,34 +1,32 @@
-from openrouter import OpenRouter
 import os
 from dotenv import load_dotenv
-import requests
+from openai import OpenAI
 
+# Force fresh environment variables loading from your local .env file
+load_dotenv(override=True)
 
-# Load .env
-load_dotenv()
+# Fetch the Groq API key
+api_key = os.getenv("GROQ_API_KEY")
 
-HACKCLUB_KEY = os.getenv("GEMINI_API_KEY")
-if not HACKCLUB_KEY:
-    raise ValueError("Hack Club API key not found in environment!")
-
-client = OpenRouter(
-    api_key=HACKCLUB_KEY,
-    server_url="https://ai.hackclub.com/proxy/v1",
+# Initialize the standard client, pointing it to Groq's endpoint
+client = OpenAI(
+    base_url="https://api.groq.com/openai/v1",
+    api_key=api_key
 )
 
 def gem3(prompt: str) -> str:
+    """
+    Unified communication wrapper for Career Granny.
+    Routes queries directly to Meta's Llama 3.3 70B via Groq's ultra-fast API.
+    """
     try:
-        response = client.chat.send(
-            # Using the latest Gemini 3 model available on the proxy
-            model="google/gemini-3-flash-preview",
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",  # High-quality flagship model on Groq
             messages=[
-                {"role": "system", "content": "You are a helpful career and college advisor for high schoolers. Always return markdown unless specifically requested for JSON or another format."},
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": prompt}
             ],
             stream=False,
         )
-        # Fix: access via choices[0]
         return response.choices[0].message.content
     except Exception as e:
-        return f"API Error: {str(e)}"
-
+        return f"Groq API Error: {str(e)}"
